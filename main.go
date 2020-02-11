@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +18,13 @@ import (
 	"github.com/fatih/color"
 	"github.com/garyburd/go-oauth/oauth"
 )
+
+type Tweet struct {
+	Identifier string `json:"id_str"`
+	User       struct {
+		ScreenName string `json:"screen_name"`
+	} `json:"user"`
+}
 
 func getConfig() (string, map[string]string, error) {
 	dir := os.Getenv("HOME")
@@ -127,13 +137,44 @@ func getAccessToken(config map[string]string) (*oauth.Credentials, bool, error) 
 	return token, authorized, nil
 }
 
+func readFile(filename string) ([]byte, error) {
+	if filename == "-" {
+		return ioutil.ReadAll(os.Stdin)
+	}
+	return ioutil.ReadFile(filename)
+}
+
+func rawCall(token *oauth.Credentials, method string, uri string, status string, res interface{}) error {
+	debug := false
+	param := make(url.Values)
+	param.Set("status", status)
+	oauthClient.SignParam(token, method, uri, param)
+	var resp *http.Response
+	var err error
+	resp, err = http.PostForm(uri, url.Values(param))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return errors.New(resp.Status)
+	}
+	if res == nil {
+		return nil
+	}
+	if debug {
+		return json.NewDecoder(io.TeeReader(resp.Body, os.Stdout)).Decode(&res)
+	}
+	return json.NewDecoder(resp.Body).Decode(&res)
+}
+
 func main() {
 	file, config, err := getConfig()
 	if err != nil {
 		log.Fatalf("cannot get configuration: %v", err)
 	}
 
-	_, authorized, err := getAccessToken(config)
+	token, authorized, err := getAccessToken(config)
 	if err != nil {
 		log.Fatalf("cannot get access token: %v", err)
 	}
@@ -147,4 +188,16 @@ func main() {
 			log.Fatalf("cannot store file: %v", err)
 		}
 	}
+
+	status, err := readFile("./status.txt")
+	if err != nil {
+		log.Fatalf("cannot read a new status: %v", err)
+	}
+
+	var tweet Tweet
+	err = rawCall(token, http.MethodPost, "https://api.twitter.com/1.1/statuses/update.json", string(status), &tweet)
+	if err != nil {
+		log.Fatalf("cannot post tweet: %v", err)
+	}
+	fmt.Printf("Tweeted: https://twitter.com/%s/status/%s\n", tweet.User.ScreenName, tweet.Identifier)
 }
