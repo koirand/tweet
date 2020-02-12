@@ -26,7 +26,7 @@ type Tweet struct {
 	} `json:"user"`
 }
 
-func getConfig() (string, map[string]string, error) {
+func getConfigDir() (string, error) {
 	dir := os.Getenv("HOME")
 	if dir == "" && runtime.GOOS == "windows" {
 		dir = os.Getenv("APPDATA")
@@ -38,6 +38,14 @@ func getConfig() (string, map[string]string, error) {
 		dir = filepath.Join(dir, ".config", "koirand-tweet")
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func getConfig() (string, map[string]string, error) {
+	dir, err := getConfigDir()
+	if err != nil {
 		return "", nil, err
 	}
 
@@ -168,36 +176,73 @@ func rawCall(token *oauth.Credentials, method string, uri string, status string,
 	return json.NewDecoder(resp.Body).Decode(&res)
 }
 
-func main() {
-	file, config, err := getConfig()
+func openEditor(file string) error {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nano"
+	}
+	cmd := exec.Command(editor, file)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func postTweet(token *oauth.Credentials) error {
+	const statusFileName = "TWEET_STATUS"
+	dir, err := getConfigDir()
 	if err != nil {
-		log.Fatalf("cannot get configuration: %v", err)
+		return err
+	}
+	statusFilePath := filepath.Join(dir, statusFileName)
+	f, err := os.Create(statusFilePath)
+	if err != nil {
+		return err
+	}
+	f.Close()
+
+	if err := openEditor(statusFilePath); err != nil {
+		return err
 	}
 
-	token, authorized, err := getAccessToken(config)
+	status, err := readFile(statusFilePath)
 	if err != nil {
-		log.Fatalf("cannot get access token: %v", err)
-	}
-	if authorized {
-		b, err := json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			log.Fatalf("cannot store file: %v", err)
-		}
-		err = ioutil.WriteFile(file, b, 0700)
-		if err != nil {
-			log.Fatalf("cannot store file: %v", err)
-		}
-	}
-
-	status, err := readFile("./status.txt")
-	if err != nil {
-		log.Fatalf("cannot read a new status: %v", err)
+		return err
+	} else if len(status) == 0 {
+		return errors.New("Tweet status is empty")
 	}
 
 	var tweet Tweet
 	err = rawCall(token, http.MethodPost, "https://api.twitter.com/1.1/statuses/update.json", string(status), &tweet)
 	if err != nil {
-		log.Fatalf("cannot post tweet: %v", err)
+		return err
 	}
 	fmt.Printf("Tweeted: https://twitter.com/%s/status/%s\n", tweet.User.ScreenName, tweet.Identifier)
+
+	return nil
+}
+
+func main() {
+	file, config, err := getConfig()
+	if err != nil {
+		log.Fatalf("Cannot get configuration: %v", err)
+	}
+
+	token, authorized, err := getAccessToken(config)
+	if err != nil {
+		log.Fatalf("Cannot get access token: %v", err)
+	}
+	if authorized {
+		b, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			log.Fatalf("Cannot store file: %v", err)
+		}
+		err = ioutil.WriteFile(file, b, 0700)
+		if err != nil {
+			log.Fatalf("Cannot store file: %v", err)
+		}
+	}
+	if err := postTweet(token); err != nil {
+		log.Fatalf("Cannot post tweet: %v", err)
+	}
 }
