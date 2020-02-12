@@ -179,7 +179,7 @@ func rawCall(token *oauth.Credentials, method string, uri string, status string,
 func openEditor(file string) error {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "nano"
+		editor = "vim"
 	}
 	cmd := exec.Command(editor, file)
 	cmd.Stdin = os.Stdin
