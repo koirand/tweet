@@ -14,9 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 
 	"github.com/fatih/color"
 	"github.com/garyburd/go-oauth/oauth"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type Tweet struct {
@@ -188,32 +190,51 @@ func openEditor(file string) error {
 	return cmd.Run()
 }
 
-func postTweet(token *oauth.Credentials) error {
+func editStatusWithEditor() ([]byte, error) {
 	const statusFileName = "TWEET_STATUS"
 	dir, err := getConfigDir()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	statusFilePath := filepath.Join(dir, statusFileName)
 	f, err := os.Create(statusFilePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	f.Close()
 
 	if err := openEditor(statusFilePath); err != nil {
-		return err
+		return nil, err
 	}
 
 	status, err := readFile(statusFilePath)
 	if err != nil {
-		return err
+		return nil, err
 	} else if len(status) == 0 {
-		return errors.New("Tweet status is empty")
+		return nil, errors.New("Tweet status is empty")
 	}
+	return status, nil
+}
 
+func readStatusFromStdin() ([]byte, error) {
+	status, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, err
+	} else if len(status) == 0 {
+		return nil, errors.New("Tweet status is empty")
+	}
+	return status, nil
+}
+
+func postTweet(token *oauth.Credentials, status []byte) error {
 	var tweet Tweet
-	err = rawCall(token, http.MethodPost, "https://api.twitter.com/1.1/statuses/update.json", string(status), &tweet)
+	err := rawCall(
+		token,
+		http.MethodPost,
+		"https://api.twitter.com/1.1/statuses/update.json",
+		string(status),
+		&tweet,
+	)
 	if err != nil {
 		return err
 	}
@@ -242,7 +263,25 @@ func main() {
 			log.Fatalf("Cannot store file: %v", err)
 		}
 	}
-	if err := postTweet(token); err != nil {
+
+	var status []byte
+	if terminal.IsTerminal(syscall.Stdin) {
+		// when execute: $ tweet
+		status, err = editStatusWithEditor()
+		if err != nil {
+			log.Fatalf("Cannot edit status with text editor: %v", err)
+		}
+	} else {
+		// when execute : echo "foo" | tweet
+		status, err = readStatusFromStdin()
+		if err != nil {
+			log.Fatalf("Cannot read status from stdin: %v", err)
+		}
+	}
+
+	fmt.Println(string(status))
+
+	if err := postTweet(token, status); err != nil {
 		log.Fatalf("Cannot post tweet: %v", err)
 	}
 }
