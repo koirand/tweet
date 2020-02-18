@@ -12,6 +12,8 @@ $ go get github.com/koirand/tweet
 
 ## Usage
 
+![demo](https://user-images.githubusercontent.com/17229643/74707327-e1623500-525c-11ea-98f5-4172344f177a.gif)
+
 ```sh
 $ tweet
 ```
