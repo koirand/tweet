@@ -5,6 +5,9 @@
 Simple command just to tweet.
 
 ## Install
+Download the binary from the [Releases page](https://github.com/koirand/tweet/releases).
+
+or
 
 ```sh
 $ go get github.com/koirand/tweet
