@@ -265,7 +265,7 @@ func main() {
 	}
 
 	var status []byte
-	if terminal.IsTerminal(syscall.Stdin) {
+	if terminal.IsTerminal(int(syscall.Stdin)) {
 		// when execute: $ tweet
 		status, err = editStatusWithEditor()
 		if err != nil {
