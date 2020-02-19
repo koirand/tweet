@@ -37,5 +37,5 @@ It's saved in the following file.
 ~/.config/koirand-tweet/settings.json
 
 #### Windows user
-%USERPROFILE%/Application Data/koirand-tweet/settings.json
+%APPDATA%/koirand-tweet/settings.json
 
